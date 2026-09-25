@@ -1,0 +1,57 @@
+# GeneTribe 1.2.1 — apt 最小化 Apptainer 配方（无官方 biocontainer / depot sif）
+#
+# 构建（在仓库根目录）：
+#   apptainer build genetribe-1.2.1.sif docker/Apptainer.def
+# 运行：
+#   apptainer run -B $PWD:/data -H /data genetribe-1.2.1.sif \
+#       core -l aet -f rice -n 16
+#
+# %runscript 直调 /opt/genetribe/genetribe（勿 symlink——上游按 argv[0] 相对路径找 bin/）。
+
+Bootstrap: docker
+From: debian:bookworm-slim
+
+%labels
+    org.opencontainers.image.title genetribe
+    org.opencontainers.image.version 1.2.1
+    org.opencontainers.image.source https://github.com/SiYangming/genetribe
+    pkg_route "apt(ncbi-blast+/bedtools/python3-venv) + pip(jcvi) + git clone v1.2.1"
+
+%environment
+    export GENETRIBE_VERSION=1.2.1
+    export PATH=/opt/genetribe:/opt/genetribe-venv/bin:${PATH}
+    export TMPDIR=/tmp
+
+%post
+    set -eux
+    export DEBIAN_FRONTEND=noninteractive
+    GENETRIBE_REPO="${GENETRIBE_REPO:-https://github.com/SiYangming/genetribe.git}"
+    GENETRIBE_TAG="${GENETRIBE_TAG:-v1.2.1}"
+    apt-get update
+    apt-get install -y --no-install-recommends \
+        ca-certificates curl git gawk \
+        ncbi-blast+ bedtools \
+        python3 python3-venv python3-pip
+    python3 -m venv /opt/genetribe-venv
+    /opt/genetribe-venv/bin/pip install --no-cache-dir 'jcvi>=1.0.6'
+    git clone --depth 1 --branch "${GENETRIBE_TAG}" \
+        "${GENETRIBE_REPO}" /opt/genetribe
+    cd /opt/genetribe
+    ./install.sh
+    test -x /opt/genetribe/genetribe
+    apt-get purge -y curl git python3-pip
+    apt-get autoremove -y
+    apt-get clean
+    rm -rf /var/lib/apt/lists/* /usr/share/doc /usr/share/man /tmp/* /var/tmp/*
+
+%runscript
+    exec /opt/genetribe/genetribe "$@"
+
+%test
+    out="$(/opt/genetribe/genetribe -h 2>&1 || true)"
+    echo "$out" | grep -q "GeneTribe"
+    echo "$out" | grep -q "1.2.1"
+    echo "$out" | grep -q "sameassembly"
+    command -v blastp >/dev/null && blastp -version | head -n 1
+    command -v bedtools >/dev/null && bedtools --version
+    python3 -c "import jcvi; print('jcvi import OK')"
