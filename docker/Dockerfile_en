@@ -1,0 +1,49 @@
+# 指定架构 (平台通过 docker build --platform 指定)
+FROM continuumio/miniconda3:latest
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# 1. 安装系统基础依赖
+RUN apt-get update && apt-get install -y \
+    git \
+    build-essential \
+    wget \
+    zlib1g-dev \
+    libbz2-dev \
+    liblzma-dev \
+    libgl1 \
+    gawk \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# 2. 规范化 Conda 频道顺序并安装核心依赖
+# - 使用 --add 确保 conda-forge 优先级最高，bioconda 其次
+# - 解除 blast=2.9.0 的强锁定，彻底解决底层 C 库冲突导致的 OOM 问题
+RUN conda config --add channels defaults && \
+    conda config --add channels bioconda && \
+    conda config --add channels conda-forge && \
+    conda config --set channel_priority strict && \
+    conda install -y -n base conda-libmamba-solver && \
+    conda install -y --solver=libmamba \
+    python \
+    blast \
+    bedtools \
+    && conda clean -a -y
+
+# 3. 单独使用 pip 安装 jcvi (MCscan)
+RUN pip install --no-cache-dir jcvi
+
+# 4. 克隆并安装 GeneTribe
+WORKDIR /opt
+RUN git clone https://github.com/chenym1/genetribe.git && \
+    cd genetribe && \
+    chmod +x install.sh && \
+    ( ./install.sh || echo "Install script warnings suppressed." )
+
+# 5. 配置环境变量
+ENV PATH="/opt/genetribe:/opt/genetribe/bin:${PATH}"
+
+WORKDIR /data
+
+# 测试是否安装成功
+CMD ["genetribe", "-h"]

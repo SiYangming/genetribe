@@ -1,0 +1,82 @@
+{% set name = "genetribe" %}
+{% set version = "1.2.1" %}
+{% set sha256 = "f1ffb024f9b52a2d97f0f2f7992f0d906fcb73e471e6696cf9c0855aa23fee33" %}
+
+package:
+  name: {{ name }}
+  version: {{ version }}
+
+source:
+  url: https://github.com/chenym1/genetribe/archive/refs/tags/v{{ version }}.tar.gz
+  sha256: {{ sha256 }}
+
+build:
+  number: 0
+  noarch: python
+  script: |
+    # Determine source directory (conda-build may strip top-level dir)
+    if [ -d "$SRC_DIR/genetribe-{{ version }}" ]; then
+      GT_DIR="$SRC_DIR/genetribe-{{ version }}"
+    else
+      GT_DIR="$SRC_DIR"
+    fi
+    # Install main script and src to $PREFIX/lib/genetribe
+    mkdir -p $PREFIX/lib/genetribe
+    cp $GT_DIR/genetribe $PREFIX/lib/genetribe/
+    cp -r $GT_DIR/src $PREFIX/lib/genetribe/
+    # Create bin/ symlinks pointing to ../src/ (as install.sh does)
+    mkdir -p $PREFIX/lib/genetribe/bin
+    cd $PREFIX/lib/genetribe/bin
+    for f in ../src/*.py ../src/*.sh; do
+      name=$(basename "$f" | cut -d. -f1)
+      ln -s "$f" "$name"
+    done
+    cd $SRC_DIR
+    # Create wrapper script in $PREFIX/bin
+    mkdir -p $PREFIX/bin
+    printf '#!/bin/bash\nexec python3 "$(dirname "$0")/../lib/genetribe/genetribe" "$@"\n' > $PREFIX/bin/genetribe
+    chmod +x $PREFIX/bin/genetribe
+
+requirements:
+  host:
+    - python >=3.6
+    - pip
+  run:
+    - python >=3.6
+    - blast
+    - bedtools
+    - jcvi
+    - pandas
+    - numpy
+    - matplotlib-base
+    - scipy
+    - seaborn
+    - scikit-learn
+    - gawk
+
+test:
+  commands:
+    - genetribe -h
+
+about:
+  home: https://chenym1.github.io/genetribe/
+  license: MIT
+  license_family: MIT
+  license_file: LICENSE
+  summary: 'GeneTribe: a comprehensive toolkit for gene family analysis'
+  description: |
+    GeneTribe is a comprehensive toolkit for gene family analysis, 
+    integrating multiple bioinformatics tools and algorithms for 
+    gene family identification, evolutionary analysis, and comparative 
+    genomics studies.
+  dev_url: https://github.com/chenym1/genetribe
+  doc_url: https://chenym1.github.io/genetribe/
+
+extra:
+  identifiers:
+    - doi:10.1093/nar/gkaa427
+  additional-platforms:
+    - linux-aarch64
+    - osx-arm64
+  recipe-maintainers:
+    - SiYangming

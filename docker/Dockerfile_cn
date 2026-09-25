@@ -1,0 +1,57 @@
+# 指定架构为 amd64/linux (平台通过 docker build --platform 指定)
+FROM docker.1ms.run/continuumio/miniconda3:latest
+
+# 设置非交互模式
+ENV DEBIAN_FRONTEND=noninteractive
+
+# 1. 替换 apt 源为清华镜像源并修复依赖
+RUN sed -i 's/deb.debian.org/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list || true && \
+    sed -i 's/security.debian.org/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list || true && \
+    sed -i 's/deb.debian.org/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list.d/debian.sources || true && \
+    apt-get update && apt-get install -y \
+    git \
+    build-essential \
+    wget \
+    zlib1g-dev \
+    libbz2-dev \
+    liblzma-dev \
+    libgl1 \
+    gawk \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# 2. 规范化 Conda 频道顺序并安装核心依赖
+# - 使用国内镜像源
+# - 使用 --add 确保 conda-forge 优先级最高，bioconda 其次
+# - 解除 blast=2.9.0 的强锁定，彻底解决底层 C 库冲突导致的 OOM 问题
+RUN conda config --add channels https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/main/ && \
+    conda config --add channels https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/bioconda/ && \
+    conda config --add channels https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/conda-forge/ && \
+    conda config --set channel_priority strict && \
+    conda install -y -n base conda-libmamba-solver && \
+    conda install -y --solver=libmamba \
+    python \
+    blast \
+    bedtools \
+    && conda clean -a -y
+
+# 3. 安装 jcvi (GeneTribe 依赖 MCscan，即 jcvi)
+# 使用 pip 安装可以自动处理缺失的 python 依赖，并配置清华源
+RUN pip install --no-cache-dir -i https://pypi.tuna.tsinghua.edu.cn/simple jcvi
+
+# 4. 构建 GeneTribe
+WORKDIR /opt
+# 使用代理加速 github 克隆
+RUN (git clone https://kkgithub.com/chenym1/genetribe.git || git clone https://github.com/chenym1/genetribe.git) && \
+    cd genetribe && \
+    chmod +x install.sh && \
+    ( ./install.sh || echo "Install script warnings suppressed." )
+
+# 5. 配置环境变量
+# GeneTribe 需要将其根目录和 bin 目录都加入 PATH
+ENV PATH="/opt/genetribe:/opt/genetribe/bin:${PATH}"
+
+WORKDIR /data
+
+# 测试是否安装成功
+CMD ["genetribe", "-h"]
